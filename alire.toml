@@ -1,0 +1,31 @@
+name = "prunt_estimator"
+description = "Time estimation for print jobs running on Prunt."
+version = "0.1.0-dev"
+
+authors = ["Liam Powell"]
+maintainers = ["Liam Powell <liam@liampll.com>"]
+maintainers-logins = ["liampwll"]
+
+executables = ["prunt_estimator"]
+
+[[depends-on]]
+prunt_physical_types = "*"
+prunt_motion_planner = "*"
+prunt_gcode_parser = "*"
+[[pins]]
+prunt_physical_types = { path = "../prunt_physical_types" }
+prunt_motion_planner = { path = "../prunt_motion_planner" }
+prunt_gcode_parser = { path = "../prunt_gcode_parser" }
+
+[build-switches]
+release.optimization = [
+  "-O3",
+  "-gnatn",
+  "-fdata-sections",
+  "-ffunction-sections",
+  "-flto=auto",
+  "-fuse-linker-plugin",
+  "-fno-pie",
+  "-fno-pic",
+  "-ffat-lto-objects"
+]
