@@ -38,15 +38,20 @@ package body Main is
       end Start;
 
       while not End_Of_File (F) loop
+         declare
+            Line : String := Get_Line (F);
          begin
-            Parse_Line (Parser_Context, Get_Line (F), C);
+            Parse_Line (Parser_Context, Line, C);
             if C.Kind = Move_Kind then
                C.Pos (E_Axis) := 0.0 * mm;
                Planner.Enqueue ((Kind => Planner.Move_Kind, Pos => C.Pos * [others => 1.0], Limits => Limits));
             end if;
          exception
-            when Bad_Line =>
-               null;
+            when E : Bad_Line =>
+               Put_Line ("Error on line:");
+               Put_Line (Line);
+               Put_Line (Ada.Exceptions.Exception_Information (E));
+               raise Bad_Line;
          end;
       end loop;
 
