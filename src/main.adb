@@ -13,7 +13,7 @@ package body Main is
    package Dimensioed_Float_IO is new System.Dim.Float_IO (Dimensioned_Float);
    use Dimensioed_Float_IO;
 
-   package Planner is new Motion_Planner.Planner (Boolean, False);
+   package Planner is new Motion_Planner.Planner (Boolean, False, [others => 0.0 * mm]);
    use Planner;
 
    Limits : constant Motion_Planner.Kinematic_Limits :=
