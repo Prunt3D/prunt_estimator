@@ -9,23 +9,9 @@ maintainers-logins = ["liampwll"]
 executables = ["prunt_estimator"]
 
 [[depends-on]]
-prunt_physical_types = "*"
-prunt_motion_planner = "*"
-prunt_gcode_parser = "*"
+prunt = "*"
 [[pins]]
-prunt_physical_types = { path = "../prunt_physical_types" }
-prunt_motion_planner = { path = "../prunt_motion_planner" }
-prunt_gcode_parser = { path = "../prunt_gcode_parser" }
+prunt = { path = "../prunt" }
 
 [build-switches]
-release.optimization = [
-  "-O3",
-  "-gnatn",
-  "-fdata-sections",
-  "-ffunction-sections",
-  "-flto=auto",
-  "-fuse-linker-plugin",
-  "-fno-pie",
-  "-fno-pic",
-  "-ffat-lto-objects"
-]
+release.optimization = ["-O3", "-gnatn", "-fdata-sections", "-ffunction-sections", "-flto=auto", "-fuse-linker-plugin", "-ffat-lto-objects"]

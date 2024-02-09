@@ -1,8 +1,8 @@
-with Gcode_Parser;   use Gcode_Parser;
-with Motion_Planner; use Motion_Planner;
-with Motion_Planner.Planner;
-with Physical_Types; use Physical_Types;
-with Ada.Text_IO;    use Ada.Text_IO;
+with Prunt;                use Prunt;
+with Prunt.Motion_Planner; use Prunt.Motion_Planner;
+with Prunt.Motion_Planner.Planner;
+with Prunt.Gcode_Parser;   use Prunt.Gcode_Parser;
+with Ada.Text_IO;          use Ada.Text_IO;
 with Ada.Command_Line;
 with GNAT.OS_Lib;
 with Ada.Exceptions;
@@ -13,16 +13,40 @@ package body Main is
    package Dimensioed_Float_IO is new System.Dim.Float_IO (Dimensioned_Float);
    use Dimensioed_Float_IO;
 
-   package Planner is new Motion_Planner.Planner (Boolean, False, [others => 0.0 * mm]);
-   use Planner;
+   type Null_Record is null record;
 
-   Limits : constant Motion_Planner.Kinematic_Limits :=
-     (Velocity_Max     => 100.0 * mm / s,
-      Acceleration_Max => 1_500.0 * mm / s**2,
-      Jerk_Max         => 2_500_000.0 * mm / s**3,
-      Snap_Max         => 0.8 * 500_000_000.0 * mm / s**4, --  Jm / Ts
-      Crackle_Max      => 0.8 * 500_000_000_000.0 * mm / s**5, --  Jm / Ts**2
-      Chord_Error_Max  => 0.1 * mm);
+   function Is_Homing_Move (Data : Boolean) return Boolean is
+   begin
+      return False;
+   end Is_Homing_Move;
+
+   package My_Planner is new Motion_Planner.Planner
+     (Flush_Extra_Data_Type        => Boolean,
+      Flush_Extra_Data_Default     => False,
+      Corner_Extra_Data_Type       => Null_Record,
+      Initial_Position             => [others => 0.0 * mm],
+      Max_Corners                  => 3_000,
+      Is_Homing_Move               => Is_Homing_Move,
+      Home_Move_Minimum_Coast_Time => 0.0 * s);
+
+   Limits : constant Motion_Planner.Kinematic_Parameters :=
+     (Lower_Pos_Limit         => (others => Length'First),
+      Upper_Pos_Limit         => (others => Length'Last),
+      Ignore_E_In_XYZE        => True,
+      Shift_Blended_Corners   => True,
+      Tangential_Velocity_Max => 10_000_000_000.0 * mm / s,
+      Axial_Velocity_Maxes    =>
+        (X_Axis => 100.0 * mm / s, Y_Axis => 100.0 * mm / s, Z_Axis => 50.0 * mm / s, E_Axis => 15.0 * mm / s),
+      Pressure_Advance_Time   => 0.0 * s,
+      Acceleration_Max        => 50_000.0 * mm / s**2,
+      Jerk_Max                => 226_000.0 * mm / s**3,
+      --  Snap_Max                => 2_000_000.0 * mm / s**4,
+      --  Acceleration_Max        => 2_000.0 * mm / s**2,
+      --  Jerk_Max                => 1_000_000_000_000.0 * mm / s**3,
+      Snap_Max                => 1_000_000_000_000.0 * mm / s**4,
+      Crackle_Max             => 1_000_000_000_000.0 * mm / s**5,
+      Chord_Error_Max         => 0.1 * mm,
+      Axial_Scaler            => (X_Axis => 1.0, Y_Axis => 1.0, Z_Axis => 0.2, E_Axis => 0.1));
 
    task Reader is
       entry Start (Filename : String);
@@ -30,8 +54,8 @@ package body Main is
 
    task body Reader is
       F              : File_Type;
-      C              : Gcode_Parser.Command := (others => <>);
-      Parser_Context : Gcode_Parser.Context := Make_Context ([others => 0.0 * mm], 100.0 * mm / s);
+      C              : Gcode_Parser.Command;
+      Parser_Context : Gcode_Parser.Context := Make_Context ((others => 0.0 * mm), 100.0 * mm / s);
    begin
       accept Start (Filename : String) do
          Open (F, In_File, Filename);
@@ -43,8 +67,11 @@ package body Main is
          begin
             Parse_Line (Parser_Context, Line, C);
             if C.Kind = Move_Kind then
-               C.Pos (E_Axis) := 0.0 * mm;
-               Planner.Enqueue ((Kind => Planner.Move_Kind, Pos => C.Pos * [others => 1.0], Limits => Limits));
+               My_Planner.Enqueue
+                 ((Kind             => My_Planner.Move_Kind,
+                   Pos              => C.Pos,
+                   Feedrate         => C.Feedrate,
+                  Corner_Extra_Data => (null record)));
             end if;
          exception
             when E : Bad_Line =>
@@ -55,14 +82,14 @@ package body Main is
          end;
       end loop;
 
-      Planner.Enqueue ((Kind => Planner.Flush_Kind, Flush_Extra_Data => True));
+      My_Planner.Enqueue ((Kind => My_Planner.Flush_Kind, Flush_Extra_Data => True));
    exception
       when E : others =>
          Put_Line ("Error in file reader: ");
          Put_Line (Ada.Exceptions.Exception_Information (E));
    end Reader;
 
-   Block : Planner.Execution_Block;
+   Block : My_Planner.Execution_Block;
 
    procedure Main is
       Total_Time            : Time   := 0.0 * s;
@@ -73,17 +100,19 @@ package body Main is
          GNAT.OS_Lib.OS_Exit (1);
       end if;
 
+      My_Planner.Runner.Setup (Limits);
+
       Reader.Start (Ada.Command_Line.Argument (1));
 
       loop
-         Planner.Dequeue (Block);
+         My_Planner.Dequeue (Block);
 
-         for I in Block.Feedrate_Profiles'Range loop
-            Total_Time            := Total_Time + Motion_Planner.Total_Time (Block.Feedrate_Profiles (I));
-            Total_Corner_Distance := Total_Corner_Distance + abs (Block.Corners (I) - Block.Corners (I - 1));
+         for I in 2 .. Block.N_Corners loop
+            Total_Time            := Total_Time + My_Planner.Segment_Time (Block, I);
+            Total_Corner_Distance := Total_Corner_Distance + My_Planner.Segment_Corner_Distance (Block, I);
          end loop;
 
-         exit when Block.Flush_Extra_Data;
+         exit when My_Planner.Flush_Extra_Data (Block);
       end loop;
 
       Put ("Total Time: ");
